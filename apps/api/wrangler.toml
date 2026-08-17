@@ -1,0 +1,7 @@
+name = "scholarsync-api"
+compatibility_date = "2026-08-17"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scholarsync_master"
+database_id = "55fd4c6e-473b-429e-81af-359880ae10f9"

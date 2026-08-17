@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: scholarsync_master_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: scholarsync_master
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./apps/api/db-init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
