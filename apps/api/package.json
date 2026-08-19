@@ -4,29 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "dotenv -e .env -- tsx watch src/index.ts",
-    "d1:init": "wrangler d1 execute DB --file d1/init.sql --remote",
+    "dev": "wrangler dev --local",
+    "d1:init": "wrangler d1 execute scholarsync_master --file d1/init.sql --remote",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "wrangler dev --local",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.1.0",
     "bcryptjs": "^2.4.3",
-    "drizzle-orm": "^0.45.2",
     "hono": "^4.6.6",
     "jsonwebtoken": "^9.0.0",
     "pdfkit": "^0.13.0",
-    "pg": "^8.11.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260819.1",
     "@types/bcryptjs": "^2.4.2",
     "@types/jsonwebtoken": "^9.0.2",
     "@types/pdfkit": "^0.12.2",
-    "@types/pg": "^8.6.6",
-    "dotenv-cli": "^6.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "wrangler": "^4.123.0"
   }

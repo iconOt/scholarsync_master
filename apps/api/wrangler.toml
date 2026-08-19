@@ -1,4 +1,5 @@
 name = "scholarsync-api"
+main = "src/index.ts"
 compatibility_date = "2026-08-17"
 
 [[d1_databases]]

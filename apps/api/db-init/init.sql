@@ -27,8 +27,11 @@ CREATE TABLE IF NOT EXISTS staff (
   name TEXT,
   role TEXT,
   email TEXT,
-  mfa BOOLEAN
+  mfa BOOLEAN,
+  password TEXT
 );
+
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS password TEXT;
 
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY,
@@ -45,14 +48,6 @@ INSERT INTO schools(id, school_name, domain, status, onboarding_step, active_stu
 ('sch-1003','Ikeja Preparatory','ikejaprep','provisioning','schema-created',205,'NGN 184,500','Folasade Adebayo','NGN 6.3M')
 ON CONFLICT (id) DO NOTHING;
 
--- seed staff
-INSERT INTO staff(id, name, role, email, mfa) VALUES
-('staff-01','Sarah Johnson','Master Super Admin','sarah@scholarsync.com',true),
-('staff-02','Ayo Martins','Onboarding Staff','ayo@scholarsync.com',true),
-('staff-03','Chika Nwosu','Finance/Revenue Staff','chika@scholarsync.com',true),
-('staff-04','Daniel Peters','Support Staff','daniel@scholarsync.com',true),
-('staff-05','Efe George','Customer Care','efe@scholarsync.com',true)
-ON CONFLICT (id) DO NOTHING;
 
 -- seed audit
 INSERT INTO audit_log(id, actor, action, timestamp, target) VALUES

@@ -46,10 +46,6 @@ INSERT OR IGNORE INTO schools(id, school_name, domain, status, onboarding_step, 
 ('sch-1002','Kaduna International College','kadunaic','suspended','complete',310,'NGN 279,000','David Okafor','NGN 9.1M'),
 ('sch-1003','Ikeja Preparatory','ikejaprep','provisioning','schema-created',205,'NGN 184,500','Folasade Adebayo','NGN 6.3M');
 
--- seed staff (with bcrypt hashed passwords)
-INSERT OR IGNORE INTO staff(id, name, role, email, mfa, password) VALUES
-('staff-01','Umar Faruq','Master Super Admin','umafaruqabdulfatah20@gmail.com',1,'$2a$10$hEHGfGsBXJZmoS.RyC735O8etVFayDDGEBzlmCWJmnJ7gdPF6Bqwy');
-
 -- seed audit
 INSERT OR IGNORE INTO audit_log(id, actor, action, timestamp, target) VALUES
 ('audit-01','Sarah Johnson','School Onboarded','2026-08-12T09:15:00Z','Lagos Academy'),

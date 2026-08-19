@@ -1,26 +1,31 @@
-import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { z } from 'zod'
 import { z as zod } from 'zod'
+import type { D1Database } from '@cloudflare/workers-types'
 
-import db from './db.js'
+import { createD1Db } from './db.js'
 import jwt from 'jsonwebtoken'
 
-// If running in Cloudflare Workers, wire the D1 binding
-if (typeof globalThis !== 'undefined' && (globalThis as any).DB) {
-  try {
-    db.useD1((globalThis as any).DB)
-  } catch (e) {
-    console.warn('Failed to attach D1 binding to db module', e)
-  }
+type Env = {
+  DB: D1Database
+  JWT_SECRET?: string
 }
 
-const app = new Hono()
+type AppEnv = {
+  Bindings: Env
+  Variables: { db: ReturnType<typeof createD1Db> }
+}
+
+const app = new Hono<AppEnv>()
 
 app.use('*', logger())
 app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization'] }))
+app.use('*', async (c, next) => {
+  c.set('db', createD1Db(c.env.DB))
+  await next()
+})
 
 const schoolSchema = z.object({
   schoolName: z.string().min(2),
@@ -83,7 +88,13 @@ app.get('/api/health', (c) => {
   })
 })
 
+app.get('/api/health/db', async (c) => {
+  const result = await c.get('db').health()
+  return c.json({ ok: result?.connected === 1, database: 'connected' })
+})
+
 app.get('/api/dashboard', async (c) => {
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       const stats = await db.getDashboardStats()
@@ -105,6 +116,7 @@ app.get('/api/dashboard', async (c) => {
 })
 
 app.get('/api/schools', async (c) => {
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       const rows = await db.getSchools()
@@ -118,6 +130,7 @@ app.get('/api/schools', async (c) => {
 })
 
 app.post('/api/schools/onboard', async (c) => {
+  const db = c.get('db')
   const body = await c.req.json().catch(() => ({}))
   const result = schoolSchema.safeParse(body)
 
@@ -157,6 +170,7 @@ app.post('/api/schools/onboard', async (c) => {
 
 // lightweight alias for older frontend path
 app.post('/api/onboard', async (c) => {
+  const db = c.get('db')
   const body = await c.req.json().catch(() => ({}))
   const result = schoolSchema.safeParse(body)
 
@@ -178,12 +192,13 @@ app.post('/api/onboard', async (c) => {
     revenue: 'NGN 0',
   }
 
-  initialSchoolRegistry.push(created)
+  await db.createSchool(created)
 
   return c.json({ ok: true, school: created }, 201)
 })
 
 app.get('/api/staff', async (c) => {
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       const rows = await db.getStaff()
@@ -203,6 +218,7 @@ app.get('/api/staff', async (c) => {
 })
 
 app.post('/api/auth/login', async (c) => {
+  const db = c.get('db')
   const body = await c.req.json().catch(() => ({}))
   const email = body.email
   const password = body.password
@@ -222,13 +238,15 @@ app.post('/api/auth/login', async (c) => {
       return c.json({ ok: false, error: 'Invalid email or password' }, 401)
     }
 
-    const bcrypt = await import('bcryptjs')
+    const bcryptModule = await import('bcryptjs')
+    const bcrypt = bcryptModule.default ?? bcryptModule
     const ok = await bcrypt.compare(password, user.password)
     if (!ok) {
       return c.json({ ok: false, error: 'Invalid email or password' }, 401)
     }
 
-    const secret = process.env.JWT_SECRET || 'change-me'
+    const secret = c.env.JWT_SECRET
+    if (!secret) return c.json({ ok: false, error: 'Authentication service unavailable' }, 503)
     const token = jwt.sign({ id: user.id, name: user.name, role: user.role, email: user.email }, secret, { expiresIn: '8h' })
     const safeUser = { id: user.id, name: user.name, role: user.role, email: user.email, mfa: user.mfa }
     return c.json({ ok: true, token, user: safeUser })
@@ -243,7 +261,8 @@ app.get('/api/auth/me', async (c) => {
   if (!auth) return c.json({ ok: false, error: 'Unauthorized' }, 401)
   const token = auth.replace(/^Bearer\s+/i, '')
   try {
-    const secret = process.env.JWT_SECRET || 'change-me'
+    const secret = c.env.JWT_SECRET
+    if (!secret) return c.json({ ok: false, error: 'Authentication service unavailable' }, 503)
     const payload: any = jwt.verify(token, secret)
     return c.json({ ok: true, user: payload })
   } catch (e) {
@@ -253,10 +272,10 @@ app.get('/api/auth/me', async (c) => {
 
 app.get('/api/staff/:id', async (c) => {
   const id = c.req.param('id')
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
-      const rows = await db.getStaff()
-      const user = (rows || []).find((r: any) => r.id === id)
+      const user = await db.getStaffById(id)
       if (user) return c.json(user)
       return c.json({ ok: false, error: 'Not found' }, 404)
     } catch (e) {
@@ -268,6 +287,7 @@ app.get('/api/staff/:id', async (c) => {
 })
 
 app.post('/api/staff', async (c) => {
+  const db = c.get('db')
   const body = await c.req.json().catch(() => ({}))
   const parsed = staffSchema.safeParse(body)
   if (!parsed.success) return c.json({ ok: false, error: 'Invalid payload', details: parsed.error.flatten() }, 400)
@@ -279,7 +299,8 @@ app.post('/api/staff', async (c) => {
       // require admin role to create staff
       try {
         const auth = c.req.header('authorization')
-        const secret = process.env.JWT_SECRET || 'change-me'
+        const secret = c.env.JWT_SECRET
+        if (!secret) return c.json({ ok: false, error: 'Authentication service unavailable' }, 503)
         if (!auth) return c.json({ ok: false, error: 'Unauthorized' }, 401)
         const token = auth.replace(/^Bearer\s+/i, '')
         const payload: any = jwt.verify(token, secret)
@@ -300,6 +321,7 @@ app.post('/api/staff', async (c) => {
 })
 
 app.put('/api/staff/:id', async (c) => {
+  const db = c.get('db')
   const id = c.req.param('id')
   const body = await c.req.json().catch(() => ({}))
   const parsed = staffSchema.safeParse({ ...body, id })
@@ -310,7 +332,8 @@ app.put('/api/staff/:id', async (c) => {
       // require admin role to update staff
       try {
         const auth = c.req.header('authorization')
-        const secret = process.env.JWT_SECRET || 'change-me'
+        const secret = c.env.JWT_SECRET
+        if (!secret) return c.json({ ok: false, error: 'Authentication service unavailable' }, 503)
         if (!auth) return c.json({ ok: false, error: 'Unauthorized' }, 401)
         const token = auth.replace(/^Bearer\s+/i, '')
         const payload: any = jwt.verify(token, secret)
@@ -319,7 +342,7 @@ app.put('/api/staff/:id', async (c) => {
         return c.json({ ok: false, error: 'Unauthorized' }, 401)
       }
 
-      const updated = await db.updateStaff(parsed.data)
+      const updated = await db.updateStaff({ ...parsed.data, id })
       return c.json({ ok: true, staff: updated })
     } catch (e) {
       console.error('DB updateStaff error', e)
@@ -332,12 +355,14 @@ app.put('/api/staff/:id', async (c) => {
 
 app.delete('/api/staff/:id', async (c) => {
   const id = c.req.param('id')
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       // require admin role to delete staff
       try {
         const auth = c.req.header('authorization')
-        const secret = process.env.JWT_SECRET || 'change-me'
+        const secret = c.env.JWT_SECRET
+        if (!secret) return c.json({ ok: false, error: 'Authentication service unavailable' }, 503)
         if (!auth) return c.json({ ok: false, error: 'Unauthorized' }, 401)
         const token = auth.replace(/^Bearer\s+/i, '')
         const payload: any = jwt.verify(token, secret)
@@ -358,6 +383,7 @@ app.delete('/api/staff/:id', async (c) => {
 })
 
 app.get('/api/audit-log', async (c) => {
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       const rows = await db.getAuditLog()
@@ -376,6 +402,7 @@ app.get('/api/audit-log', async (c) => {
 
 app.get('/api/schools/:id/invoices', async (c) => {
   const id = c.req.param('id')
+  const db = c.get('db')
   if (db.isEnabled()) {
     try {
       const rows = await db.getInvoicesForSchool(id)
@@ -423,45 +450,6 @@ app.get('/api/invoices/:id/pdf', async (c) => {
   })
 })
 
-const port = Number(process.env.PORT ?? 8787)
-
-;(async () => {
-  try {
-    const enabled = await db.initDb()
-    console.log('DB enabled:', enabled)
-
-    if (enabled) {
-      // seed DB with initial in-memory data if empty
-      const sampleStaff = [
-        { id: 'staff-01', name: 'Sarah Johnson', role: 'Master Super Admin', email: 'sarah@scholarsync.com', mfa: true },
-        { id: 'staff-02', name: 'Ayo Martins', role: 'Onboarding Staff', email: 'ayo@scholarsync.com', mfa: true },
-        { id: 'staff-03', name: 'Chika Nwosu', role: 'Finance/Revenue Staff', email: 'chika@scholarsync.com', mfa: true },
-        { id: 'staff-04', name: 'Daniel Peters', role: 'Support Staff', email: 'daniel@scholarsync.com', mfa: true },
-        { id: 'staff-05', name: 'Efe George', role: 'Customer Care', email: 'efe@scholarsync.com', mfa: true },
-      ]
-
-      const sampleAudit = [
-        { id: 'audit-01', actor: 'Sarah Johnson', action: 'School Onboarded', timestamp: '2026-08-12T09:15:00Z', target: 'Lagos Academy' },
-        { id: 'audit-02', actor: 'Chika Nwosu', action: 'Invoice Paid', timestamp: '2026-08-11T15:40:00Z', target: 'Kaduna International College' },
-        { id: 'audit-03', actor: 'System', action: 'Revenue Snapshot Synced', timestamp: '2026-08-11T11:00:00Z', target: 'Platform' },
-      ]
-
-      const sampleInvoices = initialSchoolRegistry.flatMap((s) => [
-        { id: `${s.id}-inv-1`, school_id: s.id, term: '2026 Term 1', amount: s.invoiceDue, status: 'paid', issued_at: '2026-02-01' },
-      ])
-
-      try {
-        await db.seedInitialData(initialSchoolRegistry, sampleStaff, sampleAudit, sampleInvoices)
-        console.log('Initial data seeded if DB was empty')
-      } catch (e) {
-        console.error('DB seeding error', e)
-      }
-    }
-  } catch (e) {
-    console.error('Failed to init DB', e)
-  }
-
-  serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`ScholarSync Master API running on http://localhost:${info.port}`)
-  })
-})()
+export default {
+  fetch: app.fetch,
+}

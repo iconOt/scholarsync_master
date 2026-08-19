@@ -1,39 +1,37 @@
-import { pgTable, text, integer, timestamp, boolean } from 'drizzle-orm/pg-core'
+export interface SchoolRecord {
+  id: string
+  school_name: string | null
+  domain: string | null
+  status: string | null
+  onboarding_step: string | null
+  active_students: number | null
+  invoice_due: string | null
+  owner: string | null
+  revenue: string | null
+}
 
-export const schools = pgTable('schools', {
-  id: text('id').primaryKey(),
-  school_name: text('school_name'),
-  domain: text('domain'),
-  status: text('status'),
-  onboarding_step: text('onboarding_step'),
-  active_students: integer('active_students'),
-  invoice_due: text('invoice_due'),
-  owner: text('owner'),
-  revenue: text('revenue'),
-})
+export interface InvoiceRecord {
+  id: string
+  school_id: string
+  term: string | null
+  amount: string | null
+  status: string | null
+  issued_at: string | null
+}
 
-export const invoices = pgTable('invoices', {
-  id: text('id').primaryKey(),
-  school_id: text('school_id'),
-  term: text('term'),
-  amount: text('amount'),
-  status: text('status'),
-  issued_at: timestamp('issued_at'),
-})
+export interface StaffRecord {
+  id: string
+  name: string
+  role: string
+  email: string | null
+  mfa: number
+  password: string | null
+}
 
-export const staff = pgTable('staff', {
-  id: text('id').primaryKey(),
-  name: text('name'),
-  role: text('role'),
-  email: text('email'),
-  mfa: boolean('mfa'),
-  password: text('password'),
-})
-
-export const audit_log = pgTable('audit_log', {
-  id: text('id').primaryKey(),
-  actor: text('actor'),
-  action: text('action'),
-  timestamp: timestamp('timestamp'),
-  target: text('target'),
-})
+export interface AuditLogRecord {
+  id: string
+  actor: string | null
+  action: string | null
+  timestamp: string | null
+  target: string | null
+}
